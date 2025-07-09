@@ -6,14 +6,28 @@
 //
 import SwiftUI
 import SpriteKit
+#if canImport(UIKit)
+import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
 
 class ParticleScene: SKScene {
+    #if canImport(UIKit)
     let color: UIColor
+    #else
+    let color: NSColor
+    #endif
     let speedRange: ClosedRange<Double>
     let sizeRange: ClosedRange<CGFloat>
     let particleCount: Int
     let opacityRange: ClosedRange<Double>
-    
+
+    // Particle pooling for better performance
+    private var emitterPool: [SKEmitterNode] = []
+    private var activeEmitter: SKEmitterNode?
+
+    #if canImport(UIKit)
     init(
         size: CGSize,
         color: UIColor,
@@ -28,21 +42,42 @@ class ParticleScene: SKScene {
         self.particleCount = particleCount
         self.opacityRange = opacityRange
         super.init(size: size)
-        
+
         backgroundColor = .clear
         setupParticleEmitter()
     }
+    #else
+    init(
+        size: CGSize,
+        color: NSColor,
+        speedRange: ClosedRange<Double>,
+        sizeRange: ClosedRange<CGFloat>,
+        particleCount: Int,
+        opacityRange: ClosedRange<Double>
+    ) {
+        self.color = color
+        self.speedRange = speedRange
+        self.sizeRange = sizeRange
+        self.particleCount = particleCount
+        self.opacityRange = opacityRange
+        super.init(size: size)
+
+        backgroundColor = .clear
+        setupParticleEmitter()
+    }
+    #endif
     
     required init?(coder aDecoder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
     
     private func setupParticleEmitter() {
-        let emitter = SKEmitterNode()
-        
-        // Create a white particle texture
-        emitter.particleTexture = createParticleTexture()
-        
+        // Try to reuse an emitter from the pool
+        let emitter = getPooledEmitter()
+
+        // Use cached particle texture
+        emitter.particleTexture = ParticleTextureCache.shared.getTexture(size: CGSize(width: 8, height: 8))
+
         // Update color properties
         emitter.particleColorSequence = nil
         emitter.particleColor = color
@@ -108,20 +143,27 @@ class ParticleScene: SKScene {
         emitter.yAcceleration = 20 // Slight upward acceleration
         
         addChild(emitter)
+        activeEmitter = emitter
     }
-    
-    private func createParticleTexture() -> SKTexture {
-        let size = CGSize(width: 8, height: 8)  // Smaller size for better performance
-        let renderer = UIGraphicsImageRenderer(size: size)
-        
-        let image = renderer.image { context in
-            // Simple filled white circle
-            UIColor.white.setFill()
-            let circlePath = UIBezierPath(ovalIn: CGRect(origin: .zero, size: size))
-            circlePath.fill()
+
+    private func getPooledEmitter() -> SKEmitterNode {
+        if let pooledEmitter = emitterPool.popLast() {
+            return pooledEmitter
+        } else {
+            return SKEmitterNode()
         }
-        
-        return SKTexture(image: image)
+    }
+
+    private func returnEmitterToPool(_ emitter: SKEmitterNode) {
+        emitter.removeFromParent()
+        emitter.resetSimulation()
+        emitterPool.append(emitter)
+    }
+
+    deinit {
+        // Clean up active emitter - simplified for concurrency
+        activeEmitter = nil
+        emitterPool.removeAll()
     }
 }
 
@@ -133,6 +175,7 @@ struct ParticlesView: View {
     let opacityRange: ClosedRange<Double>
     
     var scene: SKScene {
+        #if canImport(UIKit)
         let scene = ParticleScene(
             size: CGSize(width: 300, height: 300), // Use fixed size
             color: UIColor(color),
@@ -141,6 +184,16 @@ struct ParticlesView: View {
             particleCount: particleCount,
             opacityRange: opacityRange
         )
+        #else
+        let scene = ParticleScene(
+            size: CGSize(width: 300, height: 300), // Use fixed size
+            color: NSColor(color),
+            speedRange: speedRange,
+            sizeRange: sizeRange,
+            particleCount: particleCount,
+            opacityRange: opacityRange
+        )
+        #endif
         scene.scaleMode = .aspectFit
         return scene
     }

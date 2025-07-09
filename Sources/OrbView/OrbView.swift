@@ -8,28 +8,31 @@ import SwiftUI
 
 public struct OrbView: View {
     private let config: OrbConfiguration
-    
+    @StateObject private var animationDriver = OrbAnimationDriver()
+    @StateObject private var geometryCache = GeometryCache()
+    @StateObject private var viewCache = ViewCache()
+
     public init(configuration: OrbConfiguration = OrbConfiguration()) {
         self.config = configuration
     }
 
     public var body: some View {
         GeometryReader { geometry in
-            let size = min(geometry.size.width, geometry.size.height)
+            let size = geometryCache.getSize(from: geometry)
 
             ZStack {
                 // Base gradient background layer
                 if config.showBackground {
                     background
                 }
-                
+
                 // Creates depth with rotating glow effects
                 baseDepthGlows(size: size)
 
                 // Adds organic movement with flowing blob shapes
                 if config.showWavyBlobs {
-                    wavyBlob
-                    wavyBlobTwo
+                    wavyBlob(size: size)
+                    wavyBlobTwo(size: size)
                 }
 
                 // Adds bright, energetic core glow animations
@@ -54,24 +57,27 @@ public struct OrbView: View {
             .aspectRatio(1, contentMode: .fit)
             // Adding realistic, layered shadows so its brighter near the core, and softer as it grows outwards
             .modifier(
-                RealisticShadowModifier(
+                viewCache.getShadowModifier(
                     colors: config.showShadow ? config.backgroundColors : [.clear],
-                    radius: size * 0.08
+                    radius: geometryCache.getBlurRadius(size: size, multiplier: 0.08)
                 )
             )
+        }
+        .onAppear {
+            animationDriver.objectWillChange.send()
         }
     }
 
     private var background: some View {
-        LinearGradient(colors: config.backgroundColors,
-                       startPoint: .bottom,
-                       endPoint: .top)
+        viewCache.getLinearGradient(colors: config.backgroundColors,
+                                  startPoint: .bottom,
+                                  endPoint: .top)
     }
 
     private var orbOutlineColor: LinearGradient {
-        LinearGradient(colors: [.white, .clear],
-                       startPoint: .bottom,
-                       endPoint: .top)
+        viewCache.getLinearGradient(colors: [.white, .clear],
+                                  startPoint: .bottom,
+                                  endPoint: .top)
     }
     
     private var particleView: some View {
@@ -97,58 +103,62 @@ public struct OrbView: View {
         .blendMode(.plusLighter)
     }
 
-    private var wavyBlob: some View {
-        GeometryReader { geometry in
-            let size = min(geometry.size.width, geometry.size.height)
-
-            RotatingGlowView(color: .white.opacity(0.75),
-                           rotationSpeed: config.speed * 1.5,
-                           direction: .clockwise)
-                .mask {
-                    WavyBlobView(color: .white, loopDuration: 60 / config.speed * 1.75)
-                        .frame(maxWidth: size * 1.875)
-                        .offset(x: 0, y: size * 0.31)
-                }
-                .blur(radius: 1)
-                .blendMode(.plusLighter)
-        }
+    private func wavyBlob(size: CGFloat) -> some View {
+        RotatingGlowView(color: .white.opacity(0.75),
+                       rotationSpeed: config.speed * 1.5,
+                       direction: .clockwise,
+                       animationDriver: animationDriver,
+                       geometryCache: geometryCache)
+            .mask {
+                WavyBlobView(color: .white,
+                           loopDuration: 60 / config.speed * 1.75,
+                           animationDriver: animationDriver)
+                    .frame(maxWidth: size * 1.875)
+                    .offset(geometryCache.getWavyBlobOffset(size: size, multiplier: 0.31))
+            }
+            .blur(radius: 1)
+            .blendMode(.plusLighter)
     }
 
-    private var wavyBlobTwo: some View {
-        GeometryReader { geometry in
-            let size = min(geometry.size.width, geometry.size.height)
-
-            RotatingGlowView(color: .white,
-                           rotationSpeed: config.speed * 0.75,
-                           direction: .counterClockwise)
-                .mask {
-                    WavyBlobView(color: .white, loopDuration: 60 / config.speed * 2.25)
-                        .frame(maxWidth: size * 1.25)
-                        .rotationEffect(.degrees(90))
-                        .offset(x: 0, y: size * -0.31)
-                }
-                .opacity(0.5)
-                .blur(radius: 1)
-                .blendMode(.plusLighter)
-        }
+    private func wavyBlobTwo(size: CGFloat) -> some View {
+        RotatingGlowView(color: .white,
+                       rotationSpeed: config.speed * 0.75,
+                       direction: .counterClockwise,
+                       animationDriver: animationDriver,
+                       geometryCache: geometryCache)
+            .mask {
+                WavyBlobView(color: .white,
+                           loopDuration: 60 / config.speed * 2.25,
+                           animationDriver: animationDriver)
+                    .frame(maxWidth: size * 1.25)
+                    .rotationEffect(.degrees(90))
+                    .offset(geometryCache.getWavyBlobOffset(size: size, multiplier: -0.31))
+            }
+            .opacity(0.5)
+            .blur(radius: 1)
+            .blendMode(.plusLighter)
     }
 
     private func coreGlowEffects(size: CGFloat) -> some View {
         ZStack {
             RotatingGlowView(color: config.glowColor,
                           rotationSpeed: config.speed * 3,
-                          direction: .clockwise)
-                .blur(radius: size * 0.08)
+                          direction: .clockwise,
+                          animationDriver: animationDriver,
+                          geometryCache: geometryCache)
+                .blur(radius: geometryCache.getBlurRadius(size: size, multiplier: 0.08))
                 .opacity(config.coreGlowIntensity)
 
             RotatingGlowView(color: config.glowColor,
                           rotationSpeed: config.speed * 2.3,
-                          direction: .clockwise)
-                .blur(radius: size * 0.06)
+                          direction: .clockwise,
+                          animationDriver: animationDriver,
+                          geometryCache: geometryCache)
+                .blur(radius: geometryCache.getBlurRadius(size: size, multiplier: 0.06))
                 .opacity(config.coreGlowIntensity)
                 .blendMode(.plusLighter)
         }
-        .padding(size * 0.08)
+        .padding(geometryCache.getPadding(size: size, multiplier: 0.08))
     }
 
     // New combined function replacing outerGlow and outerRing
@@ -157,20 +167,24 @@ public struct OrbView: View {
             // Outer glow (previously outerGlow function)
             RotatingGlowView(color: config.glowColor,
                           rotationSpeed: config.speed * 0.75,
-                          direction: .counterClockwise)
-                .padding(size * 0.03)
-                .blur(radius: size * 0.06)
+                          direction: .counterClockwise,
+                          animationDriver: animationDriver,
+                          geometryCache: geometryCache)
+                .padding(geometryCache.getPadding(size: size, multiplier: 0.03))
+                .blur(radius: geometryCache.getBlurRadius(size: size, multiplier: 0.06))
                 .rotationEffect(.degrees(180))
                 .blendMode(.destinationOver)
-            
+
             // Outer ring (previously outerRing function)
             RotatingGlowView(color: config.glowColor.opacity(0.5),
                           rotationSpeed: config.speed * 0.25,
-                          direction: .clockwise)
+                          direction: .clockwise,
+                          animationDriver: animationDriver,
+                          geometryCache: geometryCache)
                 .frame(maxWidth: size * 0.94)
                 .rotationEffect(.degrees(180))
                 .padding(8)
-                .blur(radius: size * 0.032)
+                .blur(radius: geometryCache.getBlurRadius(size: size, multiplier: 0.032))
         }
     }
 

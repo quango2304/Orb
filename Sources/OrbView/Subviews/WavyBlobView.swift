@@ -1,42 +1,28 @@
 import SwiftUI
 
 struct WavyBlobView: View {
-    @State private var points: [CGPoint] = (0 ..< 6).map { index in
-        let angle = (Double(index) / 6) * 2 * .pi
-        return CGPoint(
-            x: 0.5 + cos(angle) * 0.9,
-            y: 0.5 + sin(angle) * 0.9
-        )
-    }
+    @ObservedObject var animationDriver: OrbAnimationDriver
+    @StateObject private var pointCache = WavyBlobPointCache()
 
     private let color: Color
     private let loopDuration: Double
 
-    init(color: Color, loopDuration: Double = 1) {
+    init(color: Color,
+         loopDuration: Double = 1,
+         animationDriver: OrbAnimationDriver) {
         self.color = color
         self.loopDuration = loopDuration
+        self.animationDriver = animationDriver
     }
 
     var body: some View {
-        TimelineView(.animation) { timeline in
-            Canvas { context, size in
-                let timeNow = timeline.date.timeIntervalSinceReferenceDate
-                let angle = (timeNow.remainder(dividingBy: loopDuration) / loopDuration) * 2 * .pi
+        Canvas { context, size in
+            let angle = animationDriver.getWavyBlobAngle(loopDuration: loopDuration)
+            let adjustedPoints = pointCache.getPoints(for: angle, size: size)
 
-                var path = Path()
-                let center = CGPoint(x: size.width / 2, y: size.height / 2)
-                let radius = min(size.width, size.height) * 0.45
-
-                // Move points with larger variations using sine for smooth looping
-                let adjustedPoints = points.enumerated().map { index, point in
-                    let phaseOffset = Double(index) * .pi / 3
-                    let xOffset = sin(angle + phaseOffset) * 0.15
-                    let yOffset = cos(angle + phaseOffset) * 0.15
-                    return CGPoint(
-                        x: (point.x - 0.5 + xOffset) * radius + center.x,
-                        y: (point.y - 0.5 + yOffset) * radius + center.y
-                    )
-                }
+            var path = Path()
+            let center = CGPoint(x: size.width / 2, y: size.height / 2)
+            let radius = min(size.width, size.height) * 0.45
 
                 // Start the path
                 path.move(to: adjustedPoints[0])
@@ -77,13 +63,11 @@ struct WavyBlobView: View {
 
                 context.fill(path, with: .color(color))
             }
-        }
-        .animation(.spring(), value: points)
     }
 }
 
 #Preview {
-    WavyBlobView(color: .purple)
+    WavyBlobView(color: .purple, animationDriver: OrbAnimationDriver())
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black)
 }

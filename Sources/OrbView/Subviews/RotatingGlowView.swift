@@ -20,7 +20,8 @@ enum RotationDirection {
 }
 
 struct RotatingGlowView: View {
-    @State private var rotation: Double = 0
+    @ObservedObject var animationDriver: OrbAnimationDriver
+    @ObservedObject var geometryCache: GeometryCache
 
     private let color: Color
     private let rotationSpeed: Double
@@ -28,16 +29,22 @@ struct RotatingGlowView: View {
 
     init(color: Color,
          rotationSpeed: Double = 30,
-         direction: RotationDirection)
+         direction: RotationDirection,
+         animationDriver: OrbAnimationDriver,
+         geometryCache: GeometryCache)
     {
         self.color = color
         self.rotationSpeed = rotationSpeed
         self.direction = direction
+        self.animationDriver = animationDriver
+        self.geometryCache = geometryCache
     }
 
     var body: some View {
         GeometryReader { geometry in
-            let size = min(geometry.size.width, geometry.size.height)
+            let size = geometryCache.getSize(from: geometry)
+            let blurRadius = geometryCache.getBlurRadius(size: size, multiplier: 0.16)
+            let rotation = animationDriver.getRotation(speed: rotationSpeed, direction: direction)
 
             Circle()
                 .fill(color)
@@ -45,20 +52,15 @@ struct RotatingGlowView: View {
                     ZStack {
                         Circle()
                             .frame(width: size, height: size)
-                            .blur(radius: size * 0.16)
+                            .blur(radius: blurRadius)
                         Circle()
                             .frame(width: size * 1.31, height: size * 1.31)
                             .offset(y: size * 0.31)
-                            .blur(radius: size * 0.16)
+                            .blur(radius: blurRadius)
                             .blendMode(.destinationOut)
                     }
                 }
                 .rotationEffect(.degrees(rotation))
-                .onAppear {
-                    withAnimation(.linear(duration: 360 / rotationSpeed).repeatForever(autoreverses: false)) {
-                        rotation = 360 * direction.multiplier
-                    }
-                }
         }
     }
 }
@@ -66,6 +68,8 @@ struct RotatingGlowView: View {
 #Preview {
     RotatingGlowView(color: .purple,
                    rotationSpeed: 30,
-                   direction: .counterClockwise)
+                   direction: .counterClockwise,
+                   animationDriver: OrbAnimationDriver(),
+                   geometryCache: GeometryCache())
         .frame(width: 128, height: 128)
 }
